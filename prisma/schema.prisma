@@ -1,0 +1,151 @@
+// Phase 1 MVP schema — see Monitoring-SaaS-Technical-Specification.docx, Section 8.
+// Scope: HTTP uptime/status/response-time monitoring only. SSL, DNS, domain,
+// nameserver, and broken-link monitor types land in later phases per the
+// roadmap (Section 10) and will extend MonitorType + add their own snapshot
+// tables when built.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountRole {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
+enum MonitorType {
+  HTTP
+}
+
+enum CheckStatus {
+  UP
+  DOWN
+  DEGRADED
+}
+
+enum AlertChannel {
+  EMAIL
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  memberships    AccountMember[]
+  ownedAccounts  Account[]        @relation("AccountOwner")
+  acknowledged   Incident[]       @relation("IncidentAcknowledgedBy")
+
+  @@map("users")
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  planTier  String   @default("starter")
+  createdAt DateTime @default(now())
+
+  owner    User            @relation("AccountOwner", fields: [ownerId], references: [id])
+  members  AccountMember[]
+  monitors Monitor[]
+
+  @@map("accounts")
+}
+
+model AccountMember {
+  accountId String
+  userId    String
+  role      AccountRole @default(OWNER)
+  createdAt DateTime    @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, userId])
+  @@map("account_members")
+}
+
+model Monitor {
+  id                          String      @id @default(cuid())
+  accountId                   String
+  name                        String
+  type                        MonitorType @default(HTTP)
+  targetUrl                   String
+  checkIntervalSec            Int         @default(300)
+  expectedStatusCode          Int         @default(200)
+  responseTimeThresholdMs     Int         @default(3000)
+  consecutiveFailureThreshold Int         @default(2)
+  isActive                    Boolean     @default(true)
+  nextRunAt                   DateTime    @default(now())
+  createdAt                   DateTime    @default(now())
+  updatedAt                   DateTime    @updatedAt
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  checkResults CheckResult[]
+  incidents    Incident[]
+
+  @@index([accountId])
+  @@index([isActive, nextRunAt])
+  @@map("monitors")
+}
+
+model CheckResult {
+  id              String      @id @default(cuid())
+  monitorId       String
+  checkedAt       DateTime    @default(now())
+  status          CheckStatus
+  httpCode        Int?
+  responseTimeMs  Int?
+  dnsMs           Int?
+  connectMs       Int?
+  tlsMs           Int?
+  ttfbMs          Int?
+  region          String      @default("default")
+  errorMessage    String?
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, checkedAt])
+  @@map("check_results")
+}
+
+model Incident {
+  id             String    @id @default(cuid())
+  monitorId      String
+  startedAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+  cause          String
+  acknowledgedBy String?
+
+  monitor         Monitor    @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  acknowledgedUser User?     @relation("IncidentAcknowledgedBy", fields: [acknowledgedBy], references: [id])
+  alertLogs       AlertLog[]
+
+  @@index([monitorId, resolvedAt])
+  @@map("incidents")
+}
+
+model AlertLog {
+  id         String       @id @default(cuid())
+  monitorId  String
+  incidentId String?
+  channel    AlertChannel @default(EMAIL)
+  recipient  String
+  subject    String
+  status     String
+  sentAt     DateTime     @default(now())
+
+  incident Incident? @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([monitorId, sentAt])
+  @@map("alert_log")
+}
