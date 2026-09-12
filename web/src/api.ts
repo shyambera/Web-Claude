@@ -1,5 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
+export type MonitorType = "HTTP" | "SSL" | "DOMAIN";
+
 export interface MonitorStats {
   uptimePercent: number | null;
   totalChecks: number;
@@ -7,12 +9,18 @@ export interface MonitorStats {
   lastCheckedAt: string | null;
   lastStatus: "UP" | "DOWN" | "DEGRADED" | null;
   mttrSeconds: number | null;
+  certExpiresAt: string | null;
+  certDaysRemaining: number | null;
+  certIssuer: string | null;
+  domainExpiresAt: string | null;
+  domainDaysRemaining: number | null;
+  registrar: string | null;
 }
 
 export interface Monitor {
   id: string;
   name: string;
-  type: "HTTP";
+  type: MonitorType;
   targetUrl: string;
   checkIntervalSec: number;
   expectedStatusCode: number;
@@ -28,13 +36,27 @@ export interface CheckResult {
   id: string;
   checkedAt: string;
   status: "UP" | "DOWN" | "DEGRADED";
+  errorMessage: string | null;
   httpCode: number | null;
   responseTimeMs: number | null;
   dnsMs: number | null;
   connectMs: number | null;
   tlsMs: number | null;
   ttfbMs: number | null;
-  errorMessage: string | null;
+  certExpiresAt: string | null;
+  certDaysRemaining: number | null;
+  certIssuer: string | null;
+  certFingerprint: string | null;
+  domainExpiresAt: string | null;
+  domainDaysRemaining: number | null;
+  registrar: string | null;
+}
+
+export interface Account {
+  id: string;
+  name: string;
+  planTier: string;
+  alertPhoneNumber: string | null;
 }
 
 export interface Incident {
@@ -100,7 +122,7 @@ export const api = {
 
   getMonitor: (id: string) => request<Monitor>(`/api/monitors/${id}`),
 
-  createMonitor: (data: Partial<Monitor> & { name: string; targetUrl: string }) =>
+  createMonitor: (data: Partial<Monitor> & { type: MonitorType; name: string; targetUrl: string }) =>
     request<Monitor>("/api/monitors", { method: "POST", body: JSON.stringify(data) }),
 
   updateMonitor: (id: string, data: Partial<Monitor>) =>
@@ -114,4 +136,9 @@ export const api = {
   getMonitorIncidents: (id: string) => request<Incident[]>(`/api/monitors/${id}/incidents`),
 
   listIncidents: () => request<Incident[]>("/api/incidents"),
+
+  getAccount: () => request<Account>("/api/account"),
+
+  updateAccount: (data: { alertPhoneNumber: string | null }) =>
+    request<Account>("/api/account", { method: "PATCH", body: JSON.stringify(data) }),
 };

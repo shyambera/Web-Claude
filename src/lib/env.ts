@@ -19,4 +19,8 @@ export const env = {
   smtpPassword: process.env.SMTP_PASSWORD || null,
   alertsFromEmail: process.env.ALERTS_FROM_EMAIL ?? "alerts@monitoring.local",
   schedulerPollIntervalMs: Number(process.env.SCHEDULER_POLL_INTERVAL_MS ?? 5000),
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || null,
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || null,
+  twilioSmsFrom: process.env.TWILIO_SMS_FROM || null,
+  twilioWhatsappFrom: process.env.TWILIO_WHATSAPP_FROM || null,
 };

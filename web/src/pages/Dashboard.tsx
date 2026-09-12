@@ -4,9 +4,18 @@ import type { Monitor } from "../api";
 import { api } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 
+const TYPE_LABEL: Record<Monitor["type"], string> = { HTTP: "HTTP", SSL: "SSL", DOMAIN: "Domain" };
+
 function formatUptime(pct: number | null | undefined): string {
   if (pct === null || pct === undefined) return "—";
   return `${pct.toFixed(2)}%`;
+}
+
+function formatDaysRemaining(days: number | null | undefined): string {
+  if (days === null || days === undefined) return "—";
+  if (days < 0) return "Expired";
+  if (days === 0) return "Today";
+  return `${days}d`;
 }
 
 function formatLastChecked(iso: string | null | undefined): string {
@@ -71,14 +80,28 @@ export function Dashboard() {
               <div>
                 <Link to={`/monitors/${monitor.id}`} className="name" style={{ color: "var(--text)" }}>
                   {monitor.name}
-                </Link>
+                </Link>{" "}
+                <span style={{ fontSize: 11, color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px" }}>
+                  {TYPE_LABEL[monitor.type]}
+                </span>
                 <div className="url">{monitor.targetUrl}</div>
               </div>
               <div className="metrics">
-                <div className="metric">
-                  <div className="value">{formatUptime(monitor.stats?.uptimePercent)}</div>
-                  <div className="label">Uptime (24h)</div>
-                </div>
+                {monitor.type === "HTTP" ? (
+                  <div className="metric">
+                    <div className="value">{formatUptime(monitor.stats?.uptimePercent)}</div>
+                    <div className="label">Uptime (24h)</div>
+                  </div>
+                ) : (
+                  <div className="metric">
+                    <div className="value">
+                      {formatDaysRemaining(
+                        monitor.type === "SSL" ? monitor.stats?.certDaysRemaining : monitor.stats?.domainDaysRemaining
+                      )}
+                    </div>
+                    <div className="label">{monitor.type === "SSL" ? "Cert expires" : "Domain expires"}</div>
+                  </div>
+                )}
                 <div className="metric">
                   <div className="value">{formatLastChecked(monitor.stats?.lastCheckedAt)}</div>
                   <div className="label">Last checked</div>

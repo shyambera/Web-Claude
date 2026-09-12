@@ -9,6 +9,13 @@ export interface UptimeStats {
   lastCheckedAt: Date | null;
   lastStatus: "UP" | "DOWN" | "DEGRADED" | null;
   mttrSeconds: number | null;
+  // Populated only for the monitor type they apply to (SSL / DOMAIN).
+  certExpiresAt: Date | null;
+  certDaysRemaining: number | null;
+  certIssuer: string | null;
+  domainExpiresAt: Date | null;
+  domainDaysRemaining: number | null;
+  registrar: string | null;
 }
 
 export async function computeUptimeStats(
@@ -45,5 +52,11 @@ export async function computeUptimeStats(
     lastCheckedAt: lastResult?.checkedAt ?? null,
     lastStatus: lastResult?.status ?? null,
     mttrSeconds,
+    certExpiresAt: lastResult?.certExpiresAt ?? null,
+    certDaysRemaining: lastResult?.certDaysRemaining ?? null,
+    certIssuer: lastResult?.certIssuer ?? null,
+    domainExpiresAt: lastResult?.domainExpiresAt ?? null,
+    domainDaysRemaining: lastResult?.domainDaysRemaining ?? null,
+    registrar: lastResult?.registrar ?? null,
   };
 }

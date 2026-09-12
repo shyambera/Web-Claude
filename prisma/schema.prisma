@@ -1,8 +1,9 @@
-// Phase 1 MVP schema — see Monitoring-SaaS-Technical-Specification.docx, Section 8.
-// Scope: HTTP uptime/status/response-time monitoring only. SSL, DNS, domain,
-// nameserver, and broken-link monitor types land in later phases per the
-// roadmap (Section 10) and will extend MonitorType + add their own snapshot
-// tables when built.
+// Schema for Phases 1–2 — see Monitoring-SaaS-Technical-Specification.docx,
+// Section 8. Phase 1: HTTP uptime/status/response-time monitoring. Phase 2
+// adds SSL certificate expiry + change detection (Sections 3.4–3.5) and
+// domain/WHOIS expiry monitoring (Section 3.6), plus WhatsApp/SMS alert
+// channels. DNS, nameserver, and broken-link monitor types remain later
+// phases and will extend MonitorType + reuse the Snapshot model below.
 
 generator client {
   provider = "prisma-client-js"
@@ -21,6 +22,8 @@ enum AccountRole {
 
 enum MonitorType {
   HTTP
+  SSL
+  DOMAIN
 }
 
 enum CheckStatus {
@@ -31,6 +34,8 @@ enum CheckStatus {
 
 enum AlertChannel {
   EMAIL
+  WHATSAPP
+  SMS
 }
 
 model User {
@@ -40,19 +45,20 @@ model User {
   name         String
   createdAt    DateTime @default(now())
 
-  memberships    AccountMember[]
-  ownedAccounts  Account[]        @relation("AccountOwner")
-  acknowledged   Incident[]       @relation("IncidentAcknowledgedBy")
+  memberships   AccountMember[]
+  ownedAccounts Account[]       @relation("AccountOwner")
+  acknowledged  Incident[]      @relation("IncidentAcknowledgedBy")
 
   @@map("users")
 }
 
 model Account {
-  id        String   @id @default(cuid())
-  name      String
-  ownerId   String
-  planTier  String   @default("starter")
-  createdAt DateTime @default(now())
+  id               String   @id @default(cuid())
+  name             String
+  ownerId          String
+  planTier         String   @default("starter")
+  alertPhoneNumber String?
+  createdAt        DateTime @default(now())
 
   owner    User            @relation("AccountOwner", fields: [ownerId], references: [id])
   members  AccountMember[]
@@ -89,9 +95,11 @@ model Monitor {
   createdAt                   DateTime    @default(now())
   updatedAt                   DateTime    @updatedAt
 
-  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  checkResults CheckResult[]
-  incidents    Incident[]
+  account           Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  checkResults      CheckResult[]
+  incidents         Incident[]
+  snapshots         Snapshot[]
+  expiryAlertStates ExpiryAlertState[]
 
   @@index([accountId])
   @@index([isActive, nextRunAt])
@@ -99,23 +107,72 @@ model Monitor {
 }
 
 model CheckResult {
-  id              String      @id @default(cuid())
-  monitorId       String
-  checkedAt       DateTime    @default(now())
-  status          CheckStatus
-  httpCode        Int?
-  responseTimeMs  Int?
-  dnsMs           Int?
-  connectMs       Int?
-  tlsMs           Int?
-  ttfbMs          Int?
-  region          String      @default("default")
-  errorMessage    String?
+  id           String      @id @default(cuid())
+  monitorId    String
+  checkedAt    DateTime    @default(now())
+  status       CheckStatus
+  region       String      @default("default")
+  errorMessage String?
+
+  // HTTP monitors (Section 3.1–3.3)
+  httpCode       Int?
+  responseTimeMs Int?
+  dnsMs          Int?
+  connectMs      Int?
+  tlsMs          Int?
+  ttfbMs         Int?
+
+  // SSL monitors (Section 3.4–3.5)
+  certExpiresAt     DateTime?
+  certDaysRemaining Int?
+  certIssuer        String?
+  certFingerprint   String?
+
+  // Domain monitors (Section 3.6)
+  domainExpiresAt     DateTime?
+  domainDaysRemaining Int?
+  registrar           String?
 
   monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
 
   @@index([monitorId, checkedAt])
   @@map("check_results")
+}
+
+/// Last-known-good state per change-detection monitor, per spec Section 8.1
+/// (fetch -> normalize -> diff against this -> alert + overwrite on change).
+/// Reused by SSL fingerprint tracking now; DNS/NS change detection (later
+/// phases) will store snapshotType "dns_records" / "ns_records" here too.
+model Snapshot {
+  id           String   @id @default(cuid())
+  monitorId    String
+  snapshotType String
+  dataJson     Json
+  capturedAt   DateTime @default(now())
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, snapshotType, capturedAt])
+  @@map("snapshots")
+}
+
+/// Tracks which expiry-warning thresholds (e.g. SSL 30/14/7/1 days, domain
+/// 60/30/14/7 days) have already been alerted on for a given target expiry
+/// date, so a daily check doesn't re-send the same warning. The unique
+/// constraint is the dedup key; a renewed cert/domain gets a new
+/// targetDate and so alerts again from the top.
+model ExpiryAlertState {
+  id            String   @id @default(cuid())
+  monitorId     String
+  kind          String
+  thresholdDays Int
+  targetDate    DateTime
+  sentAt        DateTime @default(now())
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@unique([monitorId, kind, thresholdDays, targetDate])
+  @@map("expiry_alert_states")
 }
 
 model Incident {
@@ -126,9 +183,9 @@ model Incident {
   cause          String
   acknowledgedBy String?
 
-  monitor         Monitor    @relation(fields: [monitorId], references: [id], onDelete: Cascade)
-  acknowledgedUser User?     @relation("IncidentAcknowledgedBy", fields: [acknowledgedBy], references: [id])
-  alertLogs       AlertLog[]
+  monitor          Monitor    @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  acknowledgedUser User?      @relation("IncidentAcknowledgedBy", fields: [acknowledgedBy], references: [id])
+  alertLogs        AlertLog[]
 
   @@index([monitorId, resolvedAt])
   @@map("incidents")

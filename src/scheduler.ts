@@ -1,15 +1,22 @@
+import { MonitorType } from "@prisma/client";
 import { prisma } from "./lib/db";
 import { env } from "./lib/env";
-import { httpCheckQueue } from "./lib/queue";
+import { httpCheckQueue, sslCheckQueue, domainCheckQueue } from "./lib/queue";
 
 const BATCH_SIZE = 100;
+
+const QUEUE_BY_TYPE: Record<MonitorType, typeof httpCheckQueue> = {
+  HTTP: httpCheckQueue,
+  SSL: sslCheckQueue,
+  DOMAIN: domainCheckQueue,
+};
 
 async function tick() {
   const now = new Date();
   const dueMonitors = await prisma.monitor.findMany({
     where: { isActive: true, nextRunAt: { lte: now } },
     take: BATCH_SIZE,
-    select: { id: true, checkIntervalSec: true, nextRunAt: true },
+    select: { id: true, type: true, checkIntervalSec: true, nextRunAt: true },
   });
 
   for (const monitor of dueMonitors) {
@@ -21,7 +28,7 @@ async function tick() {
     });
 
     if (claimed.count === 1) {
-      await httpCheckQueue.add("check", { monitorId: monitor.id });
+      await QUEUE_BY_TYPE[monitor.type].add("check", { monitorId: monitor.id });
     }
   }
 

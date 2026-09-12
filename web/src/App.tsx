@@ -7,6 +7,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { NewMonitor } from "./pages/NewMonitor";
 import { MonitorDetail } from "./pages/MonitorDetail";
 import { Incidents } from "./pages/Incidents";
+import { Settings } from "./pages/Settings";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -30,6 +31,7 @@ function AppRoutes() {
         <Route path="/monitors/new" element={<NewMonitor />} />
         <Route path="/monitors/:id" element={<MonitorDetail />} />
         <Route path="/incidents" element={<Incidents />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

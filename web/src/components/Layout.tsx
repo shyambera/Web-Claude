@@ -13,6 +13,7 @@ export function Layout() {
         <nav>
           <Link to="/">Monitors</Link>
           <Link to="/incidents">Incidents</Link>
+          <Link to="/settings">Settings</Link>
           {account && <span className="account-name">{account.name}</span>}
           <button className="link-btn" onClick={logout}>
             Sign out

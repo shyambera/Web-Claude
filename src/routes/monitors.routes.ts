@@ -7,13 +7,52 @@ import { computeUptimeStats } from "../services/monitor.service";
 export const monitorsRouter = Router();
 monitorsRouter.use(requireAuth);
 
-const createMonitorSchema = z.object({
+// A bare registrable domain, e.g. "example.com" or "my-shop.co.in" — no
+// scheme, path, or port. Domain-expiry monitors (spec Section 3.6) query
+// RDAP directly by this name rather than a URL.
+const DOMAIN_NAME_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63})+$/i;
+
+const baseMonitorFields = {
   name: z.string().min(1).max(200),
-  targetUrl: z.string().url(),
   checkIntervalSec: z.number().int().min(30).max(86400).default(300),
-  expectedStatusCode: z.number().int().min(100).max(599).default(200),
-  responseTimeThresholdMs: z.number().int().min(100).max(60000).default(3000),
   consecutiveFailureThreshold: z.number().int().min(1).max(10).default(2),
+};
+
+const createMonitorSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("HTTP"),
+    targetUrl: z.string().url(),
+    expectedStatusCode: z.number().int().min(100).max(599).default(200),
+    responseTimeThresholdMs: z.number().int().min(100).max(60000).default(3000),
+    ...baseMonitorFields,
+  }),
+  z.object({
+    type: z.literal("SSL"),
+    targetUrl: z
+      .string()
+      .url()
+      .refine((u) => u.startsWith("https://"), "SSL monitors must target an https:// URL"),
+    ...baseMonitorFields,
+  }),
+  z.object({
+    type: z.literal("DOMAIN"),
+    targetUrl: z
+      .string()
+      .regex(DOMAIN_NAME_PATTERN, "Enter a bare domain name, e.g. example.com — no https:// or path"),
+    ...baseMonitorFields,
+  }),
+]);
+
+// Updates don't re-discriminate by type (type is immutable after creation
+// in this UI) — this covers pause/resume and threshold tweaks generically.
+const updateMonitorSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  targetUrl: z.string().min(1).max(300).optional(),
+  checkIntervalSec: z.number().int().min(30).max(86400).optional(),
+  expectedStatusCode: z.number().int().min(100).max(599).optional(),
+  responseTimeThresholdMs: z.number().int().min(100).max(60000).optional(),
+  consecutiveFailureThreshold: z.number().int().min(1).max(10).optional(),
+  isActive: z.boolean().optional(),
 });
 
 monitorsRouter.get("/", async (req, res) => {
@@ -59,10 +98,6 @@ monitorsRouter.get("/:id", async (req, res) => {
   if (!monitor) return res.status(404).json({ error: "Monitor not found" });
 
   res.json({ ...monitor, stats: await computeUptimeStats(monitor.id) });
-});
-
-const updateMonitorSchema = createMonitorSchema.partial().extend({
-  isActive: z.boolean().optional(),
 });
 
 monitorsRouter.patch("/:id", async (req, res) => {

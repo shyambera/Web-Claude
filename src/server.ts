@@ -4,6 +4,7 @@ import { env } from "./lib/env";
 import { authRouter } from "./routes/auth.routes";
 import { monitorsRouter } from "./routes/monitors.routes";
 import { incidentsRouter } from "./routes/incidents.routes";
+import { accountRouter } from "./routes/account.routes";
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRouter);
 app.use("/api/monitors", monitorsRouter);
 app.use("/api/incidents", incidentsRouter);
+app.use("/api/account", accountRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
